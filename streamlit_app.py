@@ -1,5 +1,4 @@
 import streamlit as st
-
 import requests
 import wikipedia
 from wikipedia.exceptions import DisambiguationError, PageError
@@ -128,25 +127,53 @@ def set_background(image_path: str | None = None):
 set_background(image_path=None)
 
 # 🔍 DuckDuckGo Instant Answer with fallback
+
+
 def duckduckgo_search(query):
-    url = f"https://api.duckduckgo.com/?q={query}&format=json&no_redirect=1&no_html=1&skip_disambig=1"
+    from urllib.parse import quote_plus
+    # Properly encode the query and add additional parameters for better results
+    encoded_query = quote_plus(query)
+    url = f"https://api.duckduckgo.com/?q={encoded_query}&format=json&no_redirect=1&no_html=1&skip_disambig=1&t=griffind"
     try:
-        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=6)
-        if response.status_code != 200:
-            return f"DuckDuckGo error: Status {response.status_code}"
-        data = response.json()
-        abstract = data.get("Abstract")
-        if abstract:
-            return abstract
-        topics = data.get("RelatedTopics", [])
-        for topic in topics:
-            if isinstance(topic, dict) and "Text" in topic:
-                return topic["Text"]
-        return "DuckDuckGo found no summary for this query."
+        response = requests.get(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
+                "Accept": "application/json"
+            },
+            timeout=10
+        )
+        response.raise_for_status()  # Raise exception for bad status codes
+
+        try:
+            data = response.json()
+        except ValueError:
+            return "DuckDuckGo error: Invalid JSON response"
+
+        # Try multiple fields in order of preference
+        if data.get("Abstract"):
+            return data["Abstract"]
+        if data.get("AbstractText"):
+            return data["AbstractText"]
+        if data.get("Definition"):
+            return data["Definition"]
+        if data.get("RelatedTopics"):
+            for topic in data["RelatedTopics"]:
+                if isinstance(topic, dict) and topic.get("Text"):
+                    return topic["Text"]
+                if isinstance(topic, dict) and topic.get("FirstURL") and topic.get("Result"):
+                    # Get text before HTML
+                    return topic["Result"].split("<")[0]
+
+        return "No direct answer found. Try rephrasing your question."
+    except requests.exceptions.RequestException as e:
+        return f"DuckDuckGo connection error: {str(e)}"
     except Exception as e:
-        return f"DuckDuckGo error: {e}"
+        return f"DuckDuckGo error: {str(e)}"
 
 # 🌦️ Open-Meteo Weather
+
+
 def get_weather(lat, lon):
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
     try:
@@ -158,6 +185,8 @@ def get_weather(lat, lon):
         return f"Weather error: {e}"
 
 # 📚 Wikipedia Summary with fallback
+
+
 def wiki_summary(topic):
     try:
         cleaned = topic.lower().replace("what is", "").replace("who is", "").strip()
@@ -178,6 +207,7 @@ def wiki_summary(topic):
             return "Wikipedia found no matching pages."
     except Exception as e:
         return f"Wikipedia error: {e}"
+
 
 # 🧾 Custom CSS for a clean, professional look
 st.markdown("""
@@ -218,7 +248,8 @@ st.markdown("""
 
 # 🧙‍♂️ Title and prompt
 st.markdown('<div class="title">The Griffin</div>', unsafe_allow_html=True)
-st.markdown('<div class="prompt">Bring forth your curiosity, young witch or wizard...</div>', unsafe_allow_html=True)
+st.markdown('<div class="prompt">Bring forth your curiosity, young witch or wizard...</div>',
+            unsafe_allow_html=True)
 
 # 🧙‍♂️ Input and response
 user_input = st.text_input("🔮 Your magical query:")
